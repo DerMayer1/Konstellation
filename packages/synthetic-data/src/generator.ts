@@ -1,11 +1,8 @@
-import { createDeal, seededRandom, type Deal, type DealInput, type DealSource, type DealStage, type Segment } from "@constellation/core";
-
-export type ScenarioKey =
-  | "healthy"
-  | "inflated"
-  | "stale"
-  | "enterprise"
-  | "target_pressure";
+import { createDeal, type Deal, type DealInput, type DealSource, type DealStage, type Segment } from "@constellation/core";
+import { amountForSegment } from "./amount-distribution";
+import { scenarioConfigs, type ScenarioBias, type ScenarioConfig, type ScenarioKey } from "./scenarios";
+import { seededRandom } from "./seeded-rng";
+import { clampProbability, stagePrior, syntheticTrueProbability } from "./true-probability";
 
 export type Scenario = {
   key: ScenarioKey;
@@ -14,64 +11,6 @@ export type Scenario = {
   targetRevenue: number;
   deals: Deal[];
 };
-
-type ScenarioConfig = {
-  key: ScenarioKey;
-  name: string;
-  description: string;
-  targetRevenue: number;
-  seed: number;
-  count: number;
-  bias: "healthy" | "inflated" | "stale" | "enterprise" | "pressure";
-};
-
-const configs: ScenarioConfig[] = [
-  {
-    key: "healthy",
-    name: "Healthy pipeline",
-    description: "Good activity, clear next steps, and distributed risk.",
-    targetRevenue: 850000,
-    seed: 101,
-    count: 32,
-    bias: "healthy"
-  },
-  {
-    key: "inflated",
-    name: "Inflated forecast",
-    description: "CRM probabilities are optimistic while operating signals are weak.",
-    targetRevenue: 1100000,
-    seed: 202,
-    count: 34,
-    bias: "inflated"
-  },
-  {
-    key: "stale",
-    name: "Stale pipeline",
-    description: "Many old deals have missing activity and unclear next steps.",
-    targetRevenue: 900000,
-    seed: 303,
-    count: 30,
-    bias: "stale"
-  },
-  {
-    key: "enterprise",
-    name: "Enterprise-heavy",
-    description: "A few large deals drive volatility and concentration.",
-    targetRevenue: 1500000,
-    seed: 404,
-    count: 24,
-    bias: "enterprise"
-  },
-  {
-    key: "target_pressure",
-    name: "High target pressure",
-    description: "The target is aggressive relative to adjusted probability.",
-    targetRevenue: 1750000,
-    seed: 505,
-    count: 36,
-    bias: "pressure"
-  }
-];
 
 const accounts = [
   "Northstar Bank",
@@ -95,7 +34,7 @@ const segments: Segment[] = ["smb", "mid_market", "enterprise"];
 const today = new Date("2026-07-01T12:00:00.000Z");
 
 export function getScenarios(): Scenario[] {
-  return configs.map(generateScenario);
+  return scenarioConfigs.map(generateScenario);
 }
 
 export function getScenario(key: ScenarioKey): Scenario {
@@ -132,19 +71,19 @@ function createSyntheticDeal(config: ScenarioConfig, random: () => number, index
         ? Math.round(18 + random() * 48)
         : Math.round(random() * 28);
   const hasNextStep = config.bias === "healthy" ? random() > 0.08 : config.bias === "stale" ? random() > 0.55 : random() > 0.25;
-  const ownerHistoricalWinRate = clamp(
+  const ownerHistoricalWinRate = clampProbability(
     0.32 + random() * 0.34 - (config.bias === "stale" ? 0.08 : 0) + (source === "referral" ? 0.06 : 0)
   );
-  const stagePrior = { prospecting: 0.08, qualification: 0.18, demo: 0.34, proposal: 0.52, negotiation: 0.72, closed_won: 1, closed_lost: 0 }[stage];
   const optimism = config.bias === "inflated" ? 0.28 : config.bias === "healthy" ? 0.04 : 0.12;
-  const crmProbability = clamp(stagePrior + optimism + (random() - 0.5) * 0.18);
-  const trueProbability = clamp(
-    stagePrior * 0.45 +
-      ownerHistoricalWinRate * 0.32 +
-      (source === "referral" ? 0.12 : source === "partner" ? 0.08 : 0) -
-      inactiveDays / averageSalesCycleDays * 0.22 -
-      (hasNextStep ? 0 : 0.16)
-  );
+  const crmProbability = clampProbability(stagePrior(stage) + optimism + (random() - 0.5) * 0.18);
+  const trueProbability = syntheticTrueProbability({
+    stage,
+    ownerHistoricalWinRate,
+    source,
+    inactiveDays,
+    averageSalesCycleDays,
+    hasNextStep
+  });
 
   const input: DealInput = {
     id: `${config.key}-${index + 1}`,
@@ -169,7 +108,7 @@ function createSyntheticDeal(config: ScenarioConfig, random: () => number, index
   return createDeal(input);
 }
 
-function pickSegment(bias: ScenarioConfig["bias"], random: () => number): Segment {
+function pickSegment(bias: ScenarioBias, random: () => number): Segment {
   if (bias === "enterprise") return random() < 0.7 ? "enterprise" : "mid_market";
   const roll = random();
   if (roll < 0.38) return "smb";
@@ -177,17 +116,10 @@ function pickSegment(bias: ScenarioConfig["bias"], random: () => number): Segmen
   return "enterprise";
 }
 
-function pickStage(bias: ScenarioConfig["bias"], random: () => number): DealStage {
+function pickStage(bias: ScenarioBias, random: () => number): DealStage {
   if (bias === "healthy" && random() > 0.62) return "negotiation";
   if (bias === "inflated" && random() > 0.7) return "proposal";
   return stages[Math.floor(random() * stages.length)]!;
-}
-
-function amountForSegment(segment: Segment, random: () => number, bias: ScenarioConfig["bias"]): number {
-  const base = segment === "enterprise" ? 150000 : segment === "mid_market" ? 56000 : 18000;
-  const spread = segment === "enterprise" ? 180000 : segment === "mid_market" ? 62000 : 22000;
-  const multiplier = bias === "enterprise" && segment === "enterprise" ? 1.35 : 1;
-  return Math.round((base + random() ** 2 * spread) * multiplier / 1000) * 1000;
 }
 
 function nextStepFor(stage: DealStage): string {
@@ -213,8 +145,4 @@ function isoDaysFromNow(days: number): string {
   const date = new Date(today);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString();
-}
-
-function clamp(value: number): number {
-  return Math.min(0.98, Math.max(0.02, value));
 }
