@@ -1,0 +1,9 @@
+{
+  "name": "@constellation/synthetic-data",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@constellation/core": "*"
+  }
+}
