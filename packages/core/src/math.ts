@@ -26,12 +26,6 @@ export function seededRandom(seed: number): () => number {
   };
 }
 
-export function percentile(sortedValues: number[], p: number): number {
-  if (sortedValues.length === 0) return 0;
-  const index = Math.min(sortedValues.length - 1, Math.floor(p * sortedValues.length));
-  return sortedValues[index] ?? 0;
-}
-
 export function formatDriverValue(value: number): string {
   return value.toFixed(2);
 }

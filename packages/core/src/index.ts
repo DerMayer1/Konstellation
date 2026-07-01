@@ -59,7 +59,36 @@ export {
   type DealValidationResult,
   type DealsValidationResult
 } from "./validation/deal-schema";
-export { analyzeDeal, analyzeDeals, riskEngineVersion, riskLevel } from "./risk/risk-engine";
+export {
+  adjustProbabilityForRisk,
+  analyzeDeal,
+  analyzeDeals,
+  buildRiskDrivers,
+  calculateBaseProbability,
+  expectedRevenue,
+  normalizeRiskFeatures,
+  probabilityWeights,
+  riskEngineVersion,
+  riskLevel,
+  riskLevelThresholds,
+  riskLogitFromDrivers,
+  riskPenaltyGamma,
+  riskWeights,
+  segmentRisk,
+  sourceProbability,
+  stageProbability,
+  stageRisk
+} from "./risk/risk-engine";
 export { runMonteCarloForecast } from "./forecast/monte-carlo";
-export { brierScore, calibrationBuckets } from "./evaluation";
+export {
+  coefficientOfVariation,
+  confidenceLevel,
+  forecastConfidenceScore,
+  forecastConfidenceWeights,
+  missingDataRatio,
+  revenueConcentration
+} from "./forecast/forecast-confidence";
+export { bucketize, average, standardDeviation } from "./forecast/distribution";
+export { percentile, summarizePercentiles } from "./forecast/percentiles";
+export { brierScore, calibrationBuckets, forecastError, meanAbsolutePercentageError } from "./evaluation";
 export { seededRandom } from "./math";

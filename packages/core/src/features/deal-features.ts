@@ -1,21 +1,6 @@
 import type { Deal, DealFeatures } from "../domain/deal";
 import { clamp, daysBetween } from "../math";
-
-export const stageRisk = {
-  prospecting: 0.9,
-  qualification: 0.75,
-  demo: 0.55,
-  proposal: 0.35,
-  negotiation: 0.25,
-  closed_won: 0,
-  closed_lost: 1
-} satisfies Record<Deal["stage"], number>;
-
-export const segmentRisk = {
-  smb: 0.2,
-  mid_market: 0.35,
-  enterprise: 0.55
-} satisfies Record<Deal["segment"], number>;
+import { segmentRisk, stageRisk } from "../risk/risk-policy";
 
 export function extractDealFeatures(deal: Deal, maxAmount: number, todayIso: string): DealFeatures {
   const safeCycle = Math.max(1, deal.averageSalesCycleDays);
@@ -42,3 +27,5 @@ export function extractDealFeatures(deal: Deal, maxAmount: number, todayIso: str
     ownerRisk: 1 - clamp(deal.ownerHistoricalWinRate)
   };
 }
+
+export { segmentRisk, stageRisk };

@@ -40,6 +40,40 @@ describe("risk engine", () => {
     expect(withoutNextStep!.riskScore).toBeGreaterThan(withNextStep!.riskScore);
   });
 
+  it("increases risk when close date is near", () => {
+    const [comfortable, urgent] = analyzeDeals([
+      createDeal({ ...baseDealInput, id: "comfortable", closeDate: "2026-08-20T00:00:00.000Z" }),
+      createDeal({ ...baseDealInput, id: "urgent", closeDate: "2026-07-03T00:00:00.000Z" })
+    ], today);
+
+    expect(urgent!.riskScore).toBeGreaterThan(comfortable!.riskScore);
+  });
+
+  it("increases risk when owner win rate is low", () => {
+    const [strongOwner, weakOwner] = analyzeDeals([
+      createDeal({ ...baseDealInput, id: "strong-owner", ownerHistoricalWinRate: 0.75 }),
+      createDeal({ ...baseDealInput, id: "weak-owner", ownerHistoricalWinRate: 0.25 })
+    ], today);
+
+    expect(weakOwner!.riskScore).toBeGreaterThan(strongOwner!.riskScore);
+  });
+
+  it("reduces adjusted probability when operational risk increases", () => {
+    const [healthy, risky] = analyzeDeals([
+      createDeal(baseDealInput),
+      createDeal({
+        ...baseDealInput,
+        id: "risky",
+        lastActivityAt: null,
+        nextStep: null,
+        closeDate: "2026-07-02T00:00:00.000Z"
+      })
+    ], today);
+
+    expect(risky!.baseProbability).toBeCloseTo(healthy!.baseProbability, 6);
+    expect(risky!.adjustedProbability).toBeLessThan(healthy!.adjustedProbability);
+  });
+
   it("treats closed won and closed lost as terminal states", () => {
     const [won, lost] = analyzeDeals([
       createDeal({ ...baseDealInput, id: "won", stage: "closed_won" }),

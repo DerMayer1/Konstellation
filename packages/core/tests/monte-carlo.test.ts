@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createDeal, runMonteCarloForecast, type DealAnalysis } from "../src";
+import {
+  DomainValidationError,
+  createDeal,
+  runMonteCarloForecast,
+  type DealAnalysis
+} from "../src";
 
 function analysis(id: string, amount: number, probability: number): DealAnalysis {
   return {
@@ -63,5 +68,51 @@ describe("monte carlo forecast", () => {
     expect(forecast.p50).toBeLessThanOrEqual(forecast.p90);
     expect(forecast.probabilityOfHittingTarget).toBeGreaterThanOrEqual(0);
     expect(forecast.probabilityOfHittingTarget).toBeLessThanOrEqual(1);
+  });
+
+  it("converges close to the deterministic weighted revenue", () => {
+    const forecast = runMonteCarloForecast(
+      [analysis("a", 1000, 0.5), analysis("b", 2000, 0.25), analysis("c", 3000, 0.8)],
+      2500,
+      20000,
+      7
+    );
+
+    expect(Math.abs(forecast.expectedRevenue - forecast.deterministicExpectedRevenue)).toBeLessThan(80);
+  });
+
+  it("lowers confidence when revenue is concentrated", () => {
+    const concentrated = runMonteCarloForecast([analysis("large", 9000, 0.5), analysis("small", 1000, 0.5)], 5000, 1000, 1);
+    const diversified = runMonteCarloForecast(
+      [analysis("a", 2500, 0.5), analysis("b", 2500, 0.5), analysis("c", 2500, 0.5), analysis("d", 2500, 0.5)],
+      5000,
+      1000,
+      1
+    );
+
+    expect(concentrated.confidenceScore).toBeLessThan(diversified.confidenceScore);
+  });
+
+  it("lowers confidence when analyses contain missing data", () => {
+    const complete = analysis("complete", 1000, 0.5);
+    const incomplete = { ...complete, missingData: ["lastActivityAt", "nextStep"] };
+
+    const completeForecast = runMonteCarloForecast([complete], 500, 1000, 1);
+    const incompleteForecast = runMonteCarloForecast([incomplete], 500, 1000, 1);
+
+    expect(incompleteForecast.confidenceScore).toBeLessThan(completeForecast.confidenceScore);
+  });
+
+  it("handles an empty pipeline explicitly", () => {
+    const forecast = runMonteCarloForecast([], 1, 100, 1);
+
+    expect(forecast.expectedRevenue).toBe(0);
+    expect(forecast.probabilityOfHittingTarget).toBe(0);
+    expect(forecast.confidence).toBe("low");
+  });
+
+  it("rejects invalid forecast inputs", () => {
+    expect(() => runMonteCarloForecast([], -1, 100, 1)).toThrow(DomainValidationError);
+    expect(() => runMonteCarloForecast([], 0, 0, 1)).toThrow(DomainValidationError);
   });
 });

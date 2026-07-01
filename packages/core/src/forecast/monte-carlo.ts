@@ -1,12 +1,24 @@
 import type { DealAnalysis, ForecastResult } from "../domain/deal";
-import { percentile, seededRandom } from "../math";
+import { DomainValidationError } from "../domain/primitives";
+import { seededRandom } from "../math";
+import { average, bucketize, standardDeviation } from "./distribution";
+import {
+  coefficientOfVariation,
+  confidenceLevel,
+  forecastConfidenceScore,
+  missingDataRatio,
+  revenueConcentration
+} from "./forecast-confidence";
+import { summarizePercentiles } from "./percentiles";
 
 export function runMonteCarloForecast(
-  analyses: DealAnalysis[],
+  analyses: readonly DealAnalysis[],
   targetRevenue: number,
   simulationCount = 10000,
   seed = 42
 ): ForecastResult {
+  assertForecastInputs(targetRevenue, simulationCount);
+
   const random = seededRandom(seed);
   const revenues: number[] = [];
 
@@ -23,23 +35,19 @@ export function runMonteCarloForecast(
   const sorted = [...revenues].sort((a, b) => a - b);
   const expectedRevenue = average(revenues);
   const deterministicExpectedRevenue = analyses.reduce((sum, analysis) => sum + analysis.expectedRevenue, 0);
-  const standardDeviation = Math.sqrt(average(revenues.map((value) => (value - expectedRevenue) ** 2)));
-  const p10 = percentile(sorted, 0.1);
-  const p25 = percentile(sorted, 0.25);
-  const p50 = percentile(sorted, 0.5);
-  const p75 = percentile(sorted, 0.75);
-  const p90 = percentile(sorted, 0.9);
+  const standardDeviationValue = standardDeviation(revenues, expectedRevenue);
+  const { p10, p25, p50, p75, p90 } = summarizePercentiles(sorted);
   const probabilityOfHittingTarget =
-    revenues.filter((value) => value >= targetRevenue).length / Math.max(1, simulationCount);
+    revenues.filter((value) => value >= targetRevenue).length / simulationCount;
 
-  const concentration = revenueConcentration(analyses);
-  const missingDataRatio =
-    analyses.filter((analysis) => analysis.missingData.length > 0).length / Math.max(1, analyses.length);
-  const coefficientOfVariation = standardDeviation / Math.max(1, expectedRevenue);
-  const confidenceScore = Math.max(
-    0,
-    Math.min(1, 1 - 0.35 * concentration - 0.35 * missingDataRatio - 0.3 * coefficientOfVariation)
-  );
+  const confidenceScore =
+    analyses.length === 0
+      ? 0
+      : forecastConfidenceScore({
+          concentration: revenueConcentration(analyses),
+          missingDataRatio: missingDataRatio(analyses),
+          coefficientOfVariation: coefficientOfVariation(standardDeviationValue, expectedRevenue)
+        });
 
   return {
     simulationCount,
@@ -55,38 +63,19 @@ export function runMonteCarloForecast(
     probabilityOfHittingTarget,
     downsideGap: Math.max(0, targetRevenue - p10),
     upsidePotential: Math.max(0, p90 - targetRevenue),
-    standardDeviation,
+    standardDeviation: standardDeviationValue,
     confidenceScore,
-    confidence: confidenceScore >= 0.75 ? "high" : confidenceScore >= 0.5 ? "medium" : "low",
+    confidence: confidenceLevel(confidenceScore),
     distribution: bucketize(sorted, 18)
   };
 }
 
-function average(values: number[]): number {
-  return values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
-}
-
-function revenueConcentration(analyses: DealAnalysis[]): number {
-  const total = analyses.reduce((sum, analysis) => sum + analysis.deal.amount, 0);
-  const max = Math.max(0, ...analyses.map((analysis) => analysis.deal.amount));
-  return max / Math.max(1, total);
-}
-
-function bucketize(sortedValues: number[], bucketCount: number): ForecastResult["distribution"] {
-  const min = sortedValues[0] ?? 0;
-  const max = sortedValues[sortedValues.length - 1] ?? 0;
-  const width = Math.max(1, (max - min) / bucketCount);
-  const buckets = Array.from({ length: bucketCount }, (_, index) => ({
-    bucketStart: Math.round(min + width * index),
-    bucketEnd: Math.round(min + width * (index + 1)),
-    count: 0
-  }));
-
-  for (const value of sortedValues) {
-    const bucketIndex = Math.min(bucketCount - 1, Math.floor((value - min) / width));
-    const bucket = buckets[bucketIndex];
-    if (bucket) bucket.count += 1;
+function assertForecastInputs(targetRevenue: number, simulationCount: number): void {
+  if (!Number.isFinite(targetRevenue) || targetRevenue < 0) {
+    throw new DomainValidationError("targetRevenue must be a non-negative finite number");
   }
 
-  return buckets;
+  if (!Number.isInteger(simulationCount) || simulationCount <= 0) {
+    throw new DomainValidationError("simulationCount must be a positive integer");
+  }
 }
