@@ -5,11 +5,10 @@ import {
   analyzeDeals,
   brierScore,
   calibrationBuckets,
-  parseDeal,
+  importDealsFromCsv,
   runMonteCarloForecast,
   type Deal,
   type DealAnalysis,
-  type DealInput,
   type ForecastResult,
   type RiskLevel
 } from "@constellation/core";
@@ -49,10 +48,10 @@ export function ForecastApp() {
   async function importCsv(file: File | null) {
     if (!file) return;
     const text = await file.text();
-    const parsed = parseDealsCsv(text);
-    if (parsed.length > 0) {
-      setCustomDeals(parsed);
-      setTargetRevenue(Math.round(parsed.reduce((sum, deal) => sum + deal.amount, 0) * 0.42));
+    const parsed = importDealsFromCsv(text, { todayIso });
+    if (parsed.success && parsed.deals.length > 0) {
+      setCustomDeals([...parsed.deals]);
+      setTargetRevenue(Math.round(parsed.deals.reduce((sum, deal) => sum + deal.amount, 0) * 0.42));
       setSelectedDealId(null);
     }
   }
@@ -353,41 +352,6 @@ function ownerRows(analyses: DealAnalysis[]) {
     value: value.risk / value.count,
     helper: `${Math.round(value.risk / value.count)} avg`
   }));
-}
-
-function parseDealsCsv(text: string): Deal[] {
-  const [headerLine, ...lines] = text.trim().split(/\r?\n/);
-  if (!headerLine) return [];
-  const headers = headerLine.split(",").map((header) => header.trim());
-  return lines
-    .map((line, index) => {
-      const values = line.split(",").map((value) => value.trim());
-      const row = Object.fromEntries(headers.map((header, i) => [header, values[i] ?? ""]));
-      const input = {
-        id: row.id || `csv-${index + 1}`,
-        accountName: row.accountName || row.account || `CSV Account ${index + 1}`,
-        ownerName: row.ownerName || row.owner || "CSV Owner",
-        segment: normalize(row.segment, ["smb", "mid_market", "enterprise"], "mid_market"),
-        amount: Number(row.amount) || 0,
-        stage: normalize(row.stage, ["prospecting", "qualification", "demo", "proposal", "negotiation", "closed_won", "closed_lost"], "proposal"),
-        createdAt: row.createdAt || todayIso,
-        closeDate: row.closeDate || todayIso,
-        stageEnteredAt: row.stageEnteredAt || row.createdAt || todayIso,
-        lastActivityAt: row.lastActivityAt || null,
-        nextStep: row.nextStep || null,
-        crmProbability: Number(row.crmProbability) || 0.5,
-        ownerHistoricalWinRate: Number(row.ownerHistoricalWinRate) || 0.45,
-        averageSalesCycleDays: Number(row.averageSalesCycleDays) || 70,
-        source: normalize(row.source, ["inbound", "outbound", "partner", "referral"], "inbound")
-      } satisfies DealInput;
-
-      return parseDeal(input);
-    })
-    .filter((deal) => deal.amount > 0);
-}
-
-function normalize<T extends string>(value: string, options: T[], fallback: T): T {
-  return options.includes(value as T) ? (value as T) : fallback;
 }
 
 function sumBy<T>(items: T[], getter: (item: T) => number): number {

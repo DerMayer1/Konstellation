@@ -60,6 +60,11 @@ export {
   type DealsValidationResult
 } from "./validation/deal-schema";
 export {
+  importDealsFromCsv,
+  type CsvDealImportResult,
+  type CsvImportIssue
+} from "./import/csv-deal-importer";
+export {
   adjustProbabilityForRisk,
   analyzeDeal,
   analyzeDeals,
