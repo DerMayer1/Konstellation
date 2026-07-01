@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "es2022"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "baseUrl": ".",
+    "paths": {
+      "@constellation/core": ["packages/core/src/index.ts"],
+      "@constellation/synthetic-data": ["packages/synthetic-data/src/index.ts"],
+      "@constellation/ai": ["packages/ai/src/index.ts"]
+    }
+  }
+}

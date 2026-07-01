@@ -1,0 +1,29 @@
+{
+  "name": "constellation",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AI-native revenue forecasting system for B2B sales pipelines under uncertainty.",
+  "scripts": {
+    "dev": "npm --workspace @constellation/web run dev",
+    "build": "npm --workspace @constellation/web run build",
+    "lint": "npm --workspace @constellation/web run lint",
+    "test": "vitest run"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "dependencies": {
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}
