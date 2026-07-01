@@ -7,7 +7,8 @@
     "dev": "npm --workspace @constellation/web run dev",
     "build": "npm --workspace @constellation/web run build",
     "lint": "npm --workspace @constellation/web run lint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "seed": "tsx packages/db/src/seed.ts"
   },
   "workspaces": [
     "apps/*",
@@ -23,6 +24,7 @@
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
+    "tsx": "^4.20.6",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"
   }

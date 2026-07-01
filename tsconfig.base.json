@@ -15,7 +15,8 @@
     "paths": {
       "@constellation/core": ["packages/core/src/index.ts"],
       "@constellation/synthetic-data": ["packages/synthetic-data/src/index.ts"],
-      "@constellation/ai": ["packages/ai/src/index.ts"]
+      "@constellation/ai": ["packages/ai/src/index.ts"],
+      "@constellation/db": ["packages/db/src/index.ts"]
     }
   }
 }
