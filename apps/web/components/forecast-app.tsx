@@ -18,31 +18,68 @@ import { buildDeterministicRecommendation, createAuditRecord } from "@constellat
 const scenarios = getScenarios();
 const todayIso = "2026-07-01T12:00:00.000Z";
 
+type DataSource =
+  | { readonly kind: "none" }
+  | { readonly kind: "demo"; readonly scenarioName: string }
+  | { readonly kind: "csv"; readonly fileName: string; readonly dealCount: number };
+
+type NavItemId = "forecast" | "deals" | "risk" | "audit";
+
+const navItems: readonly {
+  readonly id: NavItemId;
+  readonly keyLabel: string;
+  readonly label: string;
+  readonly requiresData: boolean;
+}[] = [
+  { id: "forecast", keyLabel: "F2", label: "Forecast", requiresData: false },
+  { id: "deals", keyLabel: "F3", label: "Deals", requiresData: true },
+  { id: "risk", keyLabel: "F4", label: "Risk", requiresData: true },
+  { id: "audit", keyLabel: "F5", label: "Audit", requiresData: true }
+];
+
 export function ForecastApp() {
   const [scenarioKey, setScenarioKey] = useState<ScenarioKey>("inflated");
-  const [customDeals, setCustomDeals] = useState<Deal[] | null>(null);
+  const [csvDeals, setCsvDeals] = useState<Deal[] | null>(null);
+  const [dataSource, setDataSource] = useState<DataSource>({ kind: "none" });
+  const [activeNav, setActiveNav] = useState<NavItemId>("forecast");
   const scenario = getScenario(scenarioKey);
-  const [targetRevenue, setTargetRevenue] = useState(scenario.targetRevenue);
-  const deals = customDeals ?? scenario.deals;
+  const [targetRevenue, setTargetRevenue] = useState(0);
+  const deals = dataSource.kind === "demo" ? scenario.deals : csvDeals ?? [];
+  const hasData = deals.length > 0;
 
   const analyses = useMemo(() => sortAnalyses(analyzeDeals(deals, todayIso)), [deals]);
   const forecast = useMemo(
-    () => runMonteCarloForecast(analyses, targetRevenue, 8000, scenarioKey.length * 97),
-    [analyses, scenarioKey.length, targetRevenue]
+    () => hasData ? runMonteCarloForecast(analyses, targetRevenue, 8000, scenarioKey.length * 97) : null,
+    [analyses, hasData, scenarioKey.length, targetRevenue]
   );
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
-  const selectedAnalysis = analyses.find((analysis) => analysis.deal.id === selectedDealId) ?? analyses[0]!;
-  const recommendation = buildDeterministicRecommendation(selectedAnalysis, forecast);
-  const auditRecord = createAuditRecord(selectedAnalysis, recommendation);
+  const selectedAnalysis = analyses.find((analysis) => analysis.deal.id === selectedDealId) ?? analyses[0] ?? null;
+  const recommendation = useMemo(
+    () => selectedAnalysis && forecast ? buildDeterministicRecommendation(selectedAnalysis, forecast) : null,
+    [forecast, selectedAnalysis]
+  );
+  const auditRecord = useMemo(
+    () => selectedAnalysis && recommendation ? createAuditRecord(selectedAnalysis, recommendation) : null,
+    [recommendation, selectedAnalysis]
+  );
   const score = brierScore(analyses);
   const buckets = calibrationBuckets(analyses);
+  const isDemo = dataSource.kind === "demo";
+
+  function navigateTo(section: NavItemId) {
+    setActiveNav(section);
+    const target = document.getElementById(`section-${section}`) ?? document.getElementById("workspace-top");
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   function loadScenario(key: ScenarioKey) {
     const next = getScenario(key);
     setScenarioKey(key);
     setTargetRevenue(next.targetRevenue);
-    setCustomDeals(null);
+    setCsvDeals(null);
+    setDataSource({ kind: "demo", scenarioName: next.name });
     setSelectedDealId(null);
+    setActiveNav("forecast");
   }
 
   async function importCsv(file: File | null) {
@@ -50,32 +87,86 @@ export function ForecastApp() {
     const text = await file.text();
     const parsed = importDealsFromCsv(text, { todayIso });
     if (parsed.success && parsed.deals.length > 0) {
-      setCustomDeals([...parsed.deals]);
+      setCsvDeals([...parsed.deals]);
       setTargetRevenue(Math.round(parsed.deals.reduce((sum, deal) => sum + deal.amount, 0) * 0.42));
+      setDataSource({ kind: "csv", fileName: file.name, dealCount: parsed.deals.length });
       setSelectedDealId(null);
+      setActiveNav("forecast");
     }
   }
 
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand-mark">C</div>
-        <nav>
-          <span className="nav-item active">Forecast</span>
-          <span className="nav-item">Deals</span>
-          <span className="nav-item">Risk</span>
-          <span className="nav-item">Audit</span>
+        <div className="brand-mark">CNST</div>
+        <div className="nav-help">&lt; HELP &gt;</div>
+        <nav aria-label="Dashboard sections">
+          {navItems.map((item) => {
+            const disabled = item.requiresData && !hasData;
+            return (
+              <button
+                aria-current={activeNav === item.id ? "page" : undefined}
+                className={`nav-item ${activeNav === item.id ? "active" : ""}`}
+                disabled={disabled}
+                key={item.id}
+                onClick={() => navigateTo(item.id)}
+                title={disabled ? "Load pipeline data first" : `Go to ${item.label}`}
+                type="button"
+              >
+                <span>{item.keyLabel}</span>
+                <strong>{item.label}</strong>
+              </button>
+            );
+          })}
         </nav>
+        <div className="nav-status">
+          <span>F12</span>
+          <strong>System</strong>
+        </div>
       </aside>
 
-      <section className="workspace">
+      <section className="workspace" id="workspace-top">
+        <header className="terminal-header">
+          <div className="terminal-brand">
+            <strong>CONSTELLATION</strong>
+            <span>REVF</span>
+            <b>Revenue Forecasting System</b>
+          </div>
+          <div className="terminal-meta">
+            <span>User: ANALYST01</span>
+            <span>Env: LOCAL</span>
+            <span>11:08:23</span>
+          </div>
+        </header>
+
+        <section className="market-strip" aria-label="Terminal status feed">
+          <span>PIPELINE FUTURES</span>
+          <b>EXPECTED REV</b>
+          <strong>{hasData && forecast ? currency(forecast.expectedRevenue) : "--"}</strong>
+          <b>HIT TARGET</b>
+          <strong className={forecast && forecast.probabilityOfHittingTarget >= 0.5 ? "up" : "down"}>
+            {forecast ? percent(forecast.probabilityOfHittingTarget) : "--"}
+          </strong>
+          <b>HIGH RISK</b>
+          <strong className="down">{hasData ? analyses.filter((item) => item.riskLevel === "high" || item.riskLevel === "critical").length : "--"}</strong>
+          <span>MSG: 0</span>
+        </section>
+
         <header className="topbar">
           <div>
-            <h1>Constellation</h1>
+            <h1>Forecast Summary</h1>
             <p>Probabilistic revenue forecast for B2B sales pipelines.</p>
           </div>
           <div className="controls">
-            <select value={scenarioKey} onChange={(event) => loadScenario(event.target.value as ScenarioKey)}>
+            <select
+              aria-label="Demo scenario"
+              value={scenarioKey}
+              onChange={(event) => {
+                const nextKey = event.target.value as ScenarioKey;
+                setScenarioKey(nextKey);
+                if (dataSource.kind === "demo") loadScenario(nextKey);
+              }}
+            >
               {scenarios.map((item) => (
                 <option key={item.key} value={item.key}>
                   {item.name}
@@ -85,20 +176,72 @@ export function ForecastApp() {
             <label className="target-input">
               Target
               <input
-                value={targetRevenue}
+                disabled={!hasData}
+                value={targetRevenue || ""}
                 onChange={(event) => setTargetRevenue(Number(event.target.value))}
                 type="number"
               />
             </label>
             <label className="file-button">
-              Upload CSV
+              Upload Real CSV
               <input accept=".csv" type="file" onChange={(event) => void importCsv(event.target.files?.[0] ?? null)} />
             </label>
-            <button onClick={() => loadScenario(scenarioKey)}>Load Demo Dataset</button>
+            <button className="secondary-button" onClick={() => loadScenario(scenarioKey)}>Load Demo Dataset</button>
           </div>
         </header>
 
-        <section className="grid kpis">
+        <DataSourceBanner dataSource={dataSource} />
+
+        {!forecast || !selectedAnalysis || !recommendation || !auditRecord ? (
+          <EmptyState onImportCsv={importCsv} onLoadDemo={() => loadScenario(scenarioKey)} />
+        ) : (
+          <LoadedForecast
+            analyses={analyses}
+            auditRecord={auditRecord}
+            buckets={buckets}
+            forecast={forecast}
+            isDemo={isDemo}
+            recommendation={recommendation}
+            score={score}
+            selectedAnalysis={selectedAnalysis}
+            setSelectedDealId={setSelectedDealId}
+          />
+        )}
+      </section>
+    </main>
+  );
+}
+
+function LoadedForecast({
+  analyses,
+  auditRecord,
+  buckets,
+  forecast,
+  isDemo,
+  recommendation,
+  score,
+  selectedAnalysis,
+  setSelectedDealId
+}: {
+  analyses: DealAnalysis[];
+  auditRecord: ReturnType<typeof createAuditRecord>;
+  buckets: ReturnType<typeof calibrationBuckets>;
+  forecast: ForecastResult;
+  isDemo: boolean;
+  recommendation: ReturnType<typeof buildDeterministicRecommendation>;
+  score: ReturnType<typeof brierScore>;
+  selectedAnalysis: DealAnalysis;
+  setSelectedDealId: (id: string) => void;
+}) {
+  return (
+    <>
+      {isDemo ? (
+        <section className="demo-warning">
+          <strong>Demo mode:</strong> these numbers are synthetic and must not be interpreted as a real forecast.
+        </section>
+      ) : null}
+
+        <section className="grid kpis" id="section-forecast">
           <Kpi label="Total Pipeline" value={currency(sumBy(analyses, (item) => item.deal.amount))} />
           <Kpi label="Expected Revenue" value={currency(forecast.expectedRevenue)} tone="green" />
           <Kpi label="P10 / P50 / P90" value={`${currency(forecast.p10)} / ${currency(forecast.p50)} / ${currency(forecast.p90)}`} />
@@ -113,7 +256,7 @@ export function ForecastApp() {
               <div className="panel-header">
                 <div>
                   <h2>Monte Carlo Forecast</h2>
-                  <p>{forecast.simulationCount.toLocaleString()} simulations. Downside gap {currency(forecast.downsideGap)}.</p>
+                  <p>{integer(forecast.simulationCount)} simulations. Downside gap {currency(forecast.downsideGap)}.</p>
                 </div>
                 <strong>{percent(forecast.probabilityOfHittingTarget)} to hit target</strong>
               </div>
@@ -130,7 +273,7 @@ export function ForecastApp() {
               }))} />
             </section>
 
-            <section className="panel table-panel">
+            <section className="panel table-panel" id="section-deals">
               <div className="panel-header">
                 <div>
                   <h2>Critical Deals</h2>
@@ -142,10 +285,9 @@ export function ForecastApp() {
             </section>
           </div>
 
-          <DealDetail analysis={selectedAnalysis} forecast={forecast} auditRecord={auditRecord} recommendation={recommendation} />
+          <DealDetail analysis={selectedAnalysis} forecast={forecast} auditRecord={auditRecord} recommendation={recommendation} isDemo={isDemo} />
         </section>
-      </section>
-    </main>
+    </>
   );
 }
 
@@ -155,6 +297,64 @@ function Kpi({ label, value, tone }: { label: string; value: string; tone?: "gre
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
+  );
+}
+
+function DataSourceBanner({ dataSource }: { dataSource: DataSource }) {
+  if (dataSource.kind === "csv") {
+    return (
+      <section className="source-banner real">
+        <strong>Data source: Uploaded CSV</strong>
+        <span>{dataSource.fileName} · {dataSource.dealCount} deals loaded locally.</span>
+      </section>
+    );
+  }
+
+  if (dataSource.kind === "demo") {
+    return (
+      <section className="source-banner demo">
+        <strong>Data source: Demo synthetic dataset</strong>
+        <span>{dataSource.scenarioName}. This is a development fixture, not a real business forecast.</span>
+      </section>
+    );
+  }
+
+  return (
+    <section className="source-banner empty">
+      <strong>No pipeline data loaded</strong>
+      <span>Upload a real CSV to generate a forecast. Demo data is available only as a secondary development fixture.</span>
+    </section>
+  );
+}
+
+function EmptyState({
+  onImportCsv,
+  onLoadDemo
+}: {
+  onImportCsv: (file: File | null) => Promise<void>;
+  onLoadDemo: () => void;
+}) {
+  return (
+    <section className="empty-state panel">
+      <div>
+        <span className="eyebrow">Real data required</span>
+        <h2>Load a pipeline before generating a forecast</h2>
+        <p>
+          Constellation should not present fabricated numbers as product output. Upload a CRM export CSV to run the risk engine,
+          Monte Carlo forecast, recommendation layer and audit trail against actual pipeline data.
+        </p>
+      </div>
+      <div className="empty-actions">
+        <label className="file-button primary-file-button">
+          Upload Real CSV
+          <input accept=".csv" type="file" onChange={(event) => void onImportCsv(event.target.files?.[0] ?? null)} />
+        </label>
+        <button className="secondary-button" onClick={onLoadDemo}>Load Demo Dataset</button>
+      </div>
+      <div className="empty-note">
+        Demo mode is useful for testing UI and engine wiring only. It is not evidence of forecasting quality.
+      </div>
+    </section>
   );
 }
 
@@ -239,12 +439,14 @@ function DealDetail({
   analysis,
   forecast,
   auditRecord,
-  recommendation
+  recommendation,
+  isDemo
 }: {
   analysis: DealAnalysis;
   forecast: ForecastResult;
   auditRecord: ReturnType<typeof createAuditRecord>;
   recommendation: ReturnType<typeof buildDeterministicRecommendation>;
+  isDemo: boolean;
 }) {
   return (
     <aside className="detail-panel">
@@ -255,8 +457,10 @@ function DealDetail({
       </div>
 
       <div className="risk-orbit">
-        <strong>{analysis.riskScore.toFixed(1)}</strong>
-        <span>{analysis.riskLevel} risk</span>
+        <div className="risk-orbit-content">
+          <strong>{analysis.riskScore.toFixed(1)}</strong>
+          <span>{analysis.riskLevel} risk</span>
+        </div>
       </div>
 
       <div className="probability-strip">
@@ -274,7 +478,7 @@ function DealDetail({
         </div>
       </div>
 
-      <section className="detail-section">
+      <section className="detail-section" id="section-risk">
         <h3>Risk Drivers</h3>
         {analysis.riskDrivers.slice(0, 5).map((driver) => (
           <div className="driver" key={driver.key}>
@@ -288,7 +492,10 @@ function DealDetail({
       </section>
 
       <section className="detail-section recommendation">
-        <h3>AI Recommendation</h3>
+        <h3>{isDemo ? "Demo Recommendation" : "AI Recommendation"}</h3>
+        {isDemo ? (
+          <small className="demo-copy">Generated from synthetic fixture data. Do not treat this as a real account recommendation.</small>
+        ) : null}
         <p>{recommendation.executiveSummary}</p>
         {recommendation.nextBestActions.map((action) => (
           <div className="action" key={action.action}>
@@ -299,7 +506,7 @@ function DealDetail({
         ))}
       </section>
 
-      <section className="detail-section audit">
+      <section className="detail-section audit" id="section-audit">
         <h3>Audit Trail</h3>
         <dl>
           <dt>Risk engine</dt>
@@ -364,6 +571,10 @@ function currency(value: number): string {
 
 function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+function integer(value: number): string {
+  return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 function compact(value: number): string {
