@@ -45,6 +45,54 @@ Audit record
 Terminal dashboard
 ```
 
+## Quantitative Model
+
+Constellation's forecast is driven by deterministic quantitative logic before any AI-generated explanation is produced.
+
+For each deal `i`, the system estimates expected revenue as:
+
+```txt
+ER_i = Amount_i * P_adjusted_i
+```
+
+Pipeline expected revenue is the sum of deal-level expected revenue:
+
+```txt
+ER_pipeline = sum(ER_i)
+```
+
+The adjusted close probability is produced by applying deterministic risk pressure to the base probability:
+
+```txt
+P_adjusted_i = clamp(P_base_i * (1 - RiskPenalty_i), 0, 1)
+```
+
+Where:
+
+- `P_base_i` is derived from CRM probability, stage prior, source prior, and owner historical win rate;
+- `RiskPenalty_i` is derived from risk drivers such as inactivity, close pressure, stage uncertainty, missing next step, owner historical win rate, and large-deal concentration;
+- `clamp(..., 0, 1)` prevents invalid probabilities below `0` or above `1`.
+
+The Monte Carlo engine simulates possible pipeline outcomes:
+
+```txt
+Revenue_s = sum(Amount_i * Bernoulli(P_adjusted_i))
+```
+
+For each simulation `s`, every deal is sampled as won or lost according to its adjusted probability. The resulting simulated revenue distribution is then used to compute:
+
+```txt
+P(hit target) = count(Revenue_s >= Target) / N
+```
+
+Where:
+
+- `N` is the number of simulations;
+- `P10`, `P50`, and `P90` are percentiles of the simulated revenue distribution;
+- `P(hit target)` is the simulated probability of meeting or exceeding the configured revenue target.
+
+The AI layer receives these outputs after they are computed. It does not recalculate `P_adjusted`, expected revenue, risk score, or Monte Carlo percentiles.
+
 ## Data Policy
 
 The default UI state does not show fabricated numbers.
@@ -109,6 +157,12 @@ Guardrails:
 - the model cannot overwrite deterministic risk scores, probabilities, expected revenue, or forecast ranges.
 
 See `.env.example` for all runtime controls.
+
+## Interface Direction
+
+The web interface is intentionally based on the visual language of old-school Bloomberg-style financial terminals: dense information hierarchy, monospace typography, black/navy surfaces, electric blue bars, amber section headers, cyan grid lines, and green/red market-style numeric signals.
+
+The implementation does not use Bloomberg branding, logos, product names, or proprietary assets. The goal is to capture the operational feel of a legacy market-data terminal while keeping Constellation's own product identity and data model.
 
 ## Project Layout
 
