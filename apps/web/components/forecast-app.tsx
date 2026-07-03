@@ -303,7 +303,7 @@ function Kpi({ label, value, tone }: { label: string; value: string; tone?: "gre
 function DataSourceBanner({ dataSource }: { dataSource: DataSource }) {
   if (dataSource.kind === "csv") {
     return (
-      <section className="source-banner real">
+    <section aria-live="polite" className="source-banner real">
         <strong>Data source: Uploaded CSV</strong>
         <span>{dataSource.fileName} · {dataSource.dealCount} deals loaded locally.</span>
       </section>
@@ -312,7 +312,7 @@ function DataSourceBanner({ dataSource }: { dataSource: DataSource }) {
 
   if (dataSource.kind === "demo") {
     return (
-      <section className="source-banner demo">
+    <section aria-live="polite" className="source-banner demo">
         <strong>Data source: Demo synthetic dataset</strong>
         <span>{dataSource.scenarioName}. This is a development fixture, not a real business forecast.</span>
       </section>
@@ -320,7 +320,7 @@ function DataSourceBanner({ dataSource }: { dataSource: DataSource }) {
   }
 
   return (
-    <section className="source-banner empty">
+    <section aria-live="polite" className="source-banner empty">
       <strong>No pipeline data loaded</strong>
       <span>Upload a real CSV to generate a forecast. Demo data is available only as a secondary development fixture.</span>
     </section>
@@ -449,7 +449,7 @@ function DealDetail({
   isDemo: boolean;
 }) {
   return (
-    <aside className="detail-panel">
+    <aside aria-label="Selected deal detail" className="detail-panel">
       <div className="detail-heading">
         <span>{analysis.deal.segment.replace("_", " ")}</span>
         <h2>{analysis.deal.accountName}</h2>
